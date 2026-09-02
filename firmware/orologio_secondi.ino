@@ -7,8 +7,8 @@
 #include "esp_sleep.h"
 #include "driver/gpio.h"
 #include "soc/rtc.h"
-// esp_clk_slowclk_cal_get() sta in un header privato di ESP-IDF: se la versione del
-// core non lo espone la diagnostica degrada senza rompere la compilazione.
+// esp_clk_slowclk_cal_get() lives in a private ESP-IDF header: if the core
+// version doesn't expose it, diagnostics degrade without breaking compilation.
 #if __has_include("esp_private/esp_clk.h")
   #include "esp_private/esp_clk.h"
   #define HA_CALIBRAZIONE_ESPIDF 1
@@ -32,11 +32,11 @@
 #define TEMPO_ACCELERATO 40
 
 // =======================================================
-// CHIMICA DELLA BATTERIA
-// Scommentare UNA sola riga, quella corrispondente al pacco montato.
-// L'unico parametro che ne dipende e' SOGLIA_BATTERIA_SCARICA, cioe' quando
-// compare l'icona di batteria scarica. Nel resto del file non c'e' altro da toccare.
-// Ricordarsi che la scelta va coordinata con i jumper JP_DIODE / JP_LDO / JP_CS.
+// BATTERY CHEMISTRY
+// Uncomment ONE line only, the one matching the installed battery pack.
+// The only parameter that depends on it is SOGLIA_BATTERIA_SCARICA, i.e. when
+// the low-battery icon appears. Nothing else in the file needs to change.
+// Remember to match the choice with jumpers JP_DIODE / JP_LDO / JP_CS.
 // =======================================================
 #define BATTERIA_LIFEPO4
 //#define BATTERIA_LIPO
@@ -47,64 +47,63 @@
 #endif
 
 #if defined(BATTERIA_LIFEPO4)
-  // LiFePO4 1S: nominale 3.2V, fine carica 3.6V, ginocchio di scarica ~3.0V.
-  // Curva molto piatta: sta sopra i 3.3V per la gran parte della capacita',
-  // quindi 3.2V corrisponde grosso modo all'ultimo 20% di autonomia.
-  // Jumper: JP_DIODE chiuso, JP_LDO aperto, JP_CS aperto (cutoff 3.6V).
+  // LiFePO4 1S: nominal 3.2V, end-of-charge 3.6V, discharge knee ~3.0V.
+  // Very flat curve: stays above 3.3V for most of the capacity,
+  // so 3.2V corresponds roughly to the last 20% of runtime.
+  // Jumpers: JP_DIODE closed, JP_LDO open, JP_CS open (cutoff 3.6V).
   #define SOGLIA_BATTERIA_SCARICA 3.2
 #elif defined(BATTERIA_LIPO)
-  // Li-Po / Li-ion 1S: nominale 3.7V, fine carica 4.2V, cutoff 3.0V.
-  // Jumper: JP_DIODE aperto, JP_LDO chiuso, JP_CS chiuso (cutoff 4.2V).
+  // Li-Po / Li-ion 1S: nominal 3.7V, end-of-charge 4.2V, cutoff 3.0V.
+  // Jumpers: JP_DIODE open, JP_LDO closed, JP_CS closed (cutoff 4.2V).
   #define SOGLIA_BATTERIA_SCARICA 3.5
 #elif defined(BATTERIA_3AA)
-  // 3 stilo alcaline in serie: nominale 3 x 1.5 = 4.5V, fresche fino a 4.8V.
-  // 3.3V sono 1.1V a cella, cioe' praticamente esaurite.
-  // Non ricaricabili: niente TP5000, niente USB, cicloRicarica() non parte mai.
-  // Jumper: JP_DIODE aperto, JP_LDO chiuso. USB-C non montata.
+  // 3 AA alkaline cells in series: nominal 3 x 1.5 = 4.5V, fresh up to 4.8V.
+  // 3.3V means 1.1V per cell, i.e. practically depleted.
+  // Not rechargeable: no TP5000, no USB, cicloRicarica() never runs.
+  // Jumpers: JP_DIODE open, JP_LDO closed. USB-C not populated.
   #define SOGLIA_BATTERIA_SCARICA 3.3
 #endif
 
-// Partitore di lettura sull'ADC: R10 e R11 uguali, quindi fattore 0.5 e
-// moltiplicatore 2. Il valore assoluto non conta finche' le due sono uguali,
-// conta il rapporto. Dimensionato per il caso peggiore (4.8V -> 2.4V all'ADC,
-// dentro il fondo scala dell'ESP32-C3 con attenuazione 11 dB).
-#define R_PARTITORE_ALTA  2000000.0   // R10, verso VBAT
-#define R_PARTITORE_BASSA 2000000.0   // R11, verso GND
+// ADC voltage divider: R10 and R11 equal, so factor 0.5 and multiplier 2.
+// The absolute value doesn't matter as long as the two are equal — only the
+// ratio matters. Sized for worst case (4.8V -> 2.4V at ADC, within full scale
+// of ESP32-C3 with 11 dB attenuation).
+#define R_PARTITORE_ALTA  2000000.0   // R10, towards VBAT
+#define R_PARTITORE_BASSA 2000000.0   // R11, towards GND
 #define FATTORE_PARTITORE ((R_PARTITORE_ALTA + R_PARTITORE_BASSA) / R_PARTITORE_BASSA)
 
-// Soglie di comportamento, prima sparse come numeri nudi dentro setup().
-#define DURATA_PRESSIONE_LUNGA 1500  // ms di pressione continua per aprire il portale WiFi
-#define ORA_MANUTENZIONE 3           // ora in cui si legge la batteria e si invia la telemetria
-// La sincronizzazione NTP e' giornaliera, nello stesso slot della manutenzione: con un
-// quarzo nudo la deriva e' di qualche secondo al giorno e una cadenza settimanale
-// accumulerebbe mezzo minuto di errore.
+// Behavioral thresholds, previously scattered as magic numbers inside setup().
+#define DURATA_PRESSIONE_LUNGA 1500  // ms of continuous press to open the WiFi portal
+#define ORA_MANUTENZIONE 3           // hour when battery is read and telemetry is sent
+// NTP sync is daily, in the same maintenance slot: with a bare crystal the drift
+// is a few seconds per day and a weekly cadence would accumulate half a minute of error.
 
-// Secondi di anticipo del risveglio rispetto allo scoccare del minuto. Il refresh del
-// pannello dura circa 0.8 s (boot, accensione di Q3, aggiornamento dell'inchiostro):
-// svegliandosi in anticipo le cifre cambiano ESATTAMENTE sul minuto invece che dopo.
-// Da ritarare se si misura una durata di refresh diversa.
+// Seconds of early wake-up before the minute rolls over. The panel refresh takes
+// about 0.8 s (boot, Q3 turn-on, ink update): waking up early makes the digits
+// change EXACTLY on the minute instead of after. Retune if a different refresh
+// duration is measured.
 #define ANTICIPO_RISVEGLIO 1
 
-// Passate bianco/nero della pulizia morbida dello schermo. Una sola passata e' gia'
-// sufficiente nell'uso normale; alzare a 2 se si nota ghosting residuo dopo il
-// portale WiFi. Ogni passata costa circa un secondo.
+// Black/white passes of the soft screen clean. A single pass is already enough
+// in normal use; increase to 2 if residual ghosting is noticed after the WiFi
+// portal. Each pass costs about one second.
 #define CICLI_PULIZIA_SCHERMO 1
 
-// Cicli del clock lento contati per calibrarlo. 256 cicli a 32768 Hz costano circa
-// 8 ms di veglia ad ogni risveglio e danno una risoluzione di pochi ppm: alzarlo
-// migliora poco la precisione e peggiora il consumo medio.
+// Slow clock cycles counted for calibration. 256 cycles at 32768 Hz cost about
+// 8 ms of awake time per wake-up and give a resolution of a few ppm: increasing
+// it barely improves accuracy while worsening average power consumption.
 #define CICLI_CALIBRAZIONE_RTC 256
 
-// Potenza di trasmissione WiFi. In access point i beacon 802.11b a 1 Mbps a piena
-// potenza chiedono 350 mA di picco: troppo per il percorso a diodo. Abbassare qui
-// se il rail continua a cedere, alzare se il telefono fatica a vedere la rete.
+// WiFi transmit power. In access-point mode the 802.11b beacons at 1 Mbps at
+// full power draw 350 mA peak: too much for the diode path. Lower here if the
+// rail still sags, raise if the phone struggles to see the network.
 #define POTENZA_TX_PORTALE WIFI_POWER_11dBm
 #define POTENZA_TX_NORMALE WIFI_POWER_19_5dBm
 
-// Gate di Q3 (AO3401A, P-ch): LOW = display alimentato, HIGH o alta impedenza = spento.
-// R13 (100k verso +3.3V) garantisce l'interdizione quando l'ESP32 rilascia il pad.
-#define ATTESA_RAIL_DISPLAY 50   // ms di assestamento di VCC_DISPLAY dopo l'accensione
-#define DURATA_RESET_DISPLAY 20  // ms di impulso su RES: il UC8253 fa un avvio a freddo
+// Q3 gate (AO3401A, P-ch): LOW = display powered, HIGH or hi-Z = off.
+// R13 (100k to +3.3V) ensures cut-off when the ESP32 releases the pad.
+#define ATTESA_RAIL_DISPLAY 50   // ms settling time for VCC_DISPLAY after turn-on
+#define DURATA_RESET_DISPLAY 20  // ms pulse on RES: the UC8253 does a cold start
 #define GOOGLE_SHEETS_URL "https://script.google.com/macros/s/AKfycbz1fNkQNdFf_IsT9enqTU-47g7L5uAMJDx-hzJf2sJf3KGpJOuUKP3DO-dTtvNoLfhJ/exec"
 
 RTC_DATA_ATTR float tensioneBatteria = 0.0;
@@ -114,50 +113,50 @@ RTC_DATA_ATTR int fallimentiNTP = 0;
 RTC_DATA_ATTR bool batteriaScaricaMostrata = false;
 RTC_DATA_ATTR bool devMode = false;
 RTC_DATA_ATTR int contatoreRisvegli = 0;
-// Ultimo orario effettivamente sul pannello: sopravvive al deep sleep e serve a
-// ricostruire il buffer "precedente" del controller dopo il taglio di VCC.
+// Last time actually shown on the panel: survives deep sleep and is used to
+// reconstruct the controller's "previous" buffer after VCC is cut.
 RTC_DATA_ATTR int oraMostrata = -1;
 RTC_DATA_ATTR int minutoMostrato = -1;
 RTC_DATA_ATTR float voltMostrati = 0.0;
-RTC_DATA_ATTR int iconaMostrata = -1;   // -1 nessuna, 0 batteria vuota, 1..3 tacche ricarica
+RTC_DATA_ATTR int iconaMostrata = -1;   // -1 none, 0 empty battery, 1..3 charging bars
 RTC_DATA_ATTR bool avvisoWifiMostrato = false;
 RTC_DATA_ATTR bool invertitoMostrato = false;
-uint32_t freqClockLento = 0;              // misurata ad ogni risveglio
-char diagBuf[48] = "";                    // riga diagnostica mostrata in devMode
-RTC_DATA_ATTR char diagMostrata[48] = ""; // la stessa riga, com'e' sul pannello
+uint32_t freqClockLento = 0;              // measured at every wake-up
+char diagBuf[48] = "";                    // diagnostic line shown in devMode
+RTC_DATA_ATTR char diagMostrata[48] = ""; // same line, as it is on the panel
 float temperaturaInterna = 0.0;
 bool inRicarica = false;
 bool caricaCompleta = false;
 int frameRicarica = 0;
 
-// Stato dell'alimentazione del pannello. Volutamente NON RTC_DATA_ATTR: ad ogni
-// risveglio il chip riparte da reset, il pad torna in alta impedenza e R13 spegne
-// il display, quindi lo stato corretto all'avvio e' sempre "spento".
+// Panel power state. Deliberately NOT RTC_DATA_ATTR: at every wake-up the chip
+// restarts from reset, the pad goes to hi-Z and R13 turns off the display,
+// so the correct state at boot is always "off".
 bool displayAlimentato = false;
 bool displayInizializzato = false;
-// Vero finche' la RAM "precedente" del controller non e' stata ricostruita in questo ciclo.
+// True until the controller's "previous" RAM has been reconstructed in this cycle.
 bool ramPannelloDaRicostruire = false;
 
-// Frequenza reale del clock lento RTC, quello che scandisce il deep sleep e quindi
-// la precisione dell'orologio. rtc_clk_cal() conta i cicli del clock lento contro il
-// quarzo da 40 MHz del modulo e restituisce il periodo in microsecondi, in virgola
-// fissa Q13.19. Se il quarzo esterno funziona ci si aspetta ~32768 Hz; se il firmware
-// sta girando sull'oscillatore RC interno si legge un valore molto piu' alto e
-// instabile. NON e' la stessa cosa di rtc_clk_slow_src_get(), che si limita a
-// rileggere il registro appena scritto e risponde sempre di si'.
+// Actual frequency of the RTC slow clock, the one that times deep sleep and
+// therefore the clock's accuracy. rtc_clk_cal() counts slow-clock cycles against
+// the module's 40 MHz crystal and returns the period in microseconds, in Q13.19
+// fixed point. If the external crystal is working, expect ~32768 Hz; if the
+// firmware is running on the internal RC oscillator, the value will be much
+// higher and unstable. This is NOT the same as rtc_clk_slow_src_get(), which
+// simply re-reads the register just written and always says yes.
 uint32_t frequenzaClockLento() {
   uint32_t periodo = rtc_clk_cal(RTC_CAL_RTC_MUX, CICLI_CALIBRAZIONE_RTC);
   if (periodo == 0) return 0;
   return (uint32_t)((1000000ULL << 19) / periodo);
 }
 
-// Misura la frequenza reale del clock lento e la confronta con la costante di
-// calibrazione che ESP-IDF usa per convertire tick in microsecondi. Per un quarzo
-// da 32768 Hz il periodo e' 30.5176 us, che nel formato Q13.19 vale esattamente
-// 16.000.000: qualunque scostamento da quel valore e' l'errore sistematico
-// dell'orologio, espresso direttamente in ppm.
+// Measures the actual slow-clock frequency and compares it with the calibration
+// constant that ESP-IDF uses to convert ticks to microseconds. For a 32768 Hz
+// crystal the period is 30.5176 us, which in Q13.19 format equals exactly
+// 16,000,000: any deviation from that value is the clock's systematic error,
+// expressed directly in ppm.
 void allineaClockLento() {
-  // Misura il periodo reale del clock lento, una volta sola, e lo usa per due cose.
+  // Measure the real slow-clock period, once, and use it for two things.
   uint32_t periodo = rtc_clk_cal(RTC_CAL_RTC_MUX, CICLI_CALIBRAZIONE_RTC);
   if (periodo == 0) {
     snprintf(diagBuf, sizeof(diagBuf), "RTC non calibrabile");
@@ -166,12 +165,12 @@ void allineaClockLento() {
   freqClockLento = (uint32_t)((1000000ULL << 19) / periodo);
 
 #if HA_CALIBRAZIONE_ESPIDF
-  // QUESTA e' la correzione. rtc_clk_slow_src_set() commuta l'hardware ma ESP-IDF
-  // continua a convertire tick in microsecondi con la costante calcolata all'avvio,
-  // quando la sorgente era ancora l'oscillatore RC interno a ~131 kHz. Il fattore
-  // sbagliato e' circa 4x, e si applica al tempo passato in light sleep dentro
-  // displayBusyCallback(): ad ogni attesa di BUSY l'orologio si vede accreditare
-  // un quarto del tempo davvero trascorso, e resta indietro.
+  // THIS is the correction. rtc_clk_slow_src_set() switches the hardware but
+  // ESP-IDF keeps converting ticks to microseconds with the constant computed
+  // at boot, when the source was still the internal RC oscillator at ~131 kHz.
+  // The wrong factor is about 4x, and it applies to time spent in light sleep
+  // inside displayBusyCallback(): at every BUSY wait the clock is credited
+  // a quarter of the time actually elapsed, and falls behind.
   esp_clk_slowclk_cal_set(periodo);
 
   long ppm = (long)(((double)periodo - 16000000.0) / 16.0);
@@ -203,33 +202,33 @@ U8G2_FOR_ADAFRUIT_GFX u8g2Fonts;
 // -------------------------------------------------------
 
 void displayBusyCallback(const void*) {
-  // Il light sleep fa commutare i pad digitali sulla loro configurazione di sleep,
-  // che di default e' alta impedenza. Su GPIO8 significherebbe lasciare il gate di Q3
-  // a R13, togliendo VCC_DISPLAY nel mezzo del refresh. Il hold congela il livello.
+  // Light sleep switches digital pads to their sleep configuration, which
+  // defaults to hi-Z. On GPIO8 that would leave Q3's gate to R13, cutting
+  // VCC_DISPLAY in the middle of a refresh. The hold freezes the level.
   gpio_hold_en((gpio_num_t)PIN_DISPLAY_EN);
   esp_light_sleep_start();
   gpio_hold_dis((gpio_num_t)PIN_DISPLAY_EN);
 }
 
-// Alimenta il pannello e lo inizializza. Idempotente.
-// Il parametro "reset" e' il flag "initial" di GxEPD2: con true la libreria converte
-// il primo refresh parziale in uno completo. Va tenuto false sui risvegli da timer,
-// altrimenti ogni minuto diventa un full refresh.
+// Powers the panel and initializes it. Idempotent.
+// The "reset" parameter is GxEPD2's "initial" flag: when true the library
+// converts the first partial refresh into a full one. Must be false on timer
+// wake-ups, otherwise every minute becomes a full refresh.
 void initDisplay(bool reset) {
   if (displayInizializzato) return;
 
   pinMode(PIN_DISPLAY_EN, OUTPUT);
   digitalWrite(PIN_DISPLAY_EN, LOW);
-  // Il pad deve conservare questa configurazione anche in light sleep.
+  // The pad must keep this configuration even during light sleep.
   gpio_sleep_sel_dis((gpio_num_t)PIN_DISPLAY_EN);
   displayAlimentato = true;
   delay(ATTESA_RAIL_DISPLAY);
 
-  // R12 tira RES su VCC_DISPLAY, non su +3.3V: RES sale insieme al rail e il
-  // power-on reset del controller deve darlo il firmware, non l'hardware.
+  // R12 pulls RES to VCC_DISPLAY, not to +3.3V: RES rises together with the
+  // rail and the controller's power-on reset must come from firmware, not hardware.
   display.init(115200, reset, DURATA_RESET_DISPLAY, false);
   displayInizializzato = true;
-  // Il pannello e' appena stato riacceso: la RAM del controller e' da ricostruire.
+  // The panel was just powered on: the controller's RAM needs to be reconstructed.
   ramPannelloDaRicostruire = true;
 
   display.epd2.selectSPI(SPI, SPISettings(10000000, MSBFIRST, SPI_MODE0));
@@ -245,45 +244,45 @@ void initDisplay(bool reset) {
   display.epd2.setBusyCallback(displayBusyCallback);
 }
 
-// Spegne il pannello. Va chiamata su OGNI percorso prima del deep sleep, anche
-// quando il display non e' mai stato acceso in questo ciclo.
+// Turns off the panel. Must be called on EVERY path before deep sleep, even
+// when the display was never turned on in this cycle.
 void spegniDisplay() {
   if (!displayAlimentato) {
-    // Mai acceso: lascio il pad in alta impedenza, R13 tiene Q3 interdetto.
+    // Never turned on: leave the pad at hi-Z, R13 keeps Q3 in cut-off.
     pinMode(PIN_DISPLAY_EN, INPUT);
     return;
   }
 
-  // 1) POF: il controller chiude il proprio DC/DC. Togliere VCC con le tensioni
-  //    alte ancora attive stressa il pannello. Serve la SPI ancora viva.
+  // 1) POF: the controller shuts down its own DC/DC. Cutting VCC with the
+  //    high voltages still active stresses the panel. SPI must still be alive.
   if (displayInizializzato) display.powerOff();
 
-  // 2) A display spento BUSY resta flottante: disarmo il risveglio da light sleep.
+  // 2) With the display off BUSY floats: disarm the light-sleep wake-up.
   gpio_wakeup_disable((gpio_num_t)BUSY_PIN);
 
-  // 3) Scollego le linee verso il pannello PRIMA di togliere VCC, altrimenti l'ESP32
-  //    lo retro-alimenta attraverso i diodi di protezione degli ingressi.
+  // 3) Disconnect lines to the panel BEFORE cutting VCC, otherwise the ESP32
+  //    back-powers it through the input protection diodes.
   SPI.end();
   pinMode(RES_PIN, INPUT);
   pinMode(DC_PIN, INPUT);
   pinMode(CS_PIN, INPUT);
   pinMode(BUSY_PIN, INPUT);
 
-  // 4) Solo adesso interdico Q3, pilotando il gate per una commutazione netta.
+  // 4) Only now cut off Q3, driving the gate for a clean switch-off.
   gpio_hold_dis((gpio_num_t)PIN_DISPLAY_EN);
   digitalWrite(PIN_DISPLAY_EN, HIGH);
   delay(5);
 
-  // 5) Rilascio il pad. GPIO8 non e' un RTC GPIO sull'ESP32-C3, quindi in deep sleep
-  //    va comunque in alta impedenza: il livello alto lo garantisce R13.
+  // 5) Release the pad. GPIO8 is not an RTC GPIO on the ESP32-C3, so in deep
+  //    sleep it goes to hi-Z anyway: R13 guarantees the high level.
   pinMode(PIN_DISPLAY_EN, INPUT);
 
   displayAlimentato = false;
   displayInizializzato = false;
 }
 
-// I colori sono parametrici perche' alle ore tonde la schermata e' invertita:
-// con i valori fissi l'icona verrebbe disegnata nera su nero.
+// Colors are parametric because at the top of every hour the screen is inverted:
+// with hardcoded values the icon would be drawn black on black.
 void disegnaIconaBatteria(int16_t bx, int16_t by, int tacche,
                           uint16_t colTesto = GxEPD_BLACK, uint16_t colSfondo = GxEPD_WHITE) {
   display.drawRect(bx, by, 23, 12, colTesto);
@@ -304,13 +303,13 @@ void animaBatteria() {
     display.fillScreen(GxEPD_WHITE);
     disegnaIconaBatteria(bx, by, tacche);
   } while (display.nextPage());
-  // Anche questa funzione modifica l'angolo, quindi deve tenere aggiornata la
-  // fotografia usata per ricostruire il buffer precedente.
+  // This function also modifies the corner, so the snapshot used to
+  // reconstruct the previous buffer must be updated too.
   iconaMostrata = tacche;
 }
 
-// Riempie tutto lo schermo di un colore usando la finestra parziale, quindi con la
-// LUT veloce e non con quella nativa del full refresh.
+// Fills the entire screen with a color using the partial window, hence the
+// fast LUT and not the native full-refresh one.
 void riempiSchermo(uint16_t colore) {
   display.setPartialWindow(0, 0, display.width(), display.height());
   display.firstPage();
@@ -319,15 +318,16 @@ void riempiSchermo(uint16_t colore) {
   } while (display.nextPage());
 }
 
-// Pulizia morbida: nero, bianco, e lo schermo resta bianco pronto per il disegno.
-// Alternativa al full refresh nativo, che per scuotere l'inchiostro inverte il
-// pannello una cinquantina di volte in due secondi — corretto tecnicamente, ma
-// visivamente allarmante per chi non sa cosa sta guardando.
-// Pulisce meno a fondo, quindi NON sostituisce il full refresh notturno.
+// Soft clean: black, white, and the screen is left white ready for drawing.
+// Alternative to the native full refresh, which shakes the ink by inverting the
+// panel about fifty times in two seconds — technically correct, but visually
+// alarming for someone who doesn't know what they're looking at.
+// Cleans less thoroughly, so it does NOT replace the nightly full refresh.
 void pulisciSchermo() {
-  // Dopo il taglio di VCC la RAM "precedente" del controller e' indefinita, quindi
-  // la prima passata a nero piloterebbe solo i pixel che per caso risultano diversi.
-  // La inizializzo a bianco: cosi' ogni pixel risulta cambiato e viene pilotato davvero.
+  // After VCC cut the controller's "previous" RAM is undefined, so the first
+  // black pass would only drive pixels that happen to differ by chance.
+  // Initialize it to white: this way every pixel registers as changed and
+  // actually gets driven.
   if (ramPannelloDaRicostruire) {
     display.setPartialWindow(0, 0, display.width(), display.height());
     display.firstPage();
@@ -341,9 +341,9 @@ void pulisciSchermo() {
     riempiSchermo(GxEPD_WHITE);
   }
 
-  // Il pannello adesso e' bianco e la RAM "precedente" del controller pure, perche'
-  // l'ultima passata l'ha riallineata. Azzerando la fotografia, il disegno successivo
-  // parte da bianco con un differenziale corretto e senza tentare ricostruzioni.
+  // The panel is now white and the controller's "previous" RAM is too, because
+  // the last pass realigned it. By zeroing the snapshot, the next draw starts
+  // from white with a correct differential and without attempting reconstructions.
   oraMostrata = -1;
   minutoMostrato = -1;
   iconaMostrata = -1;
@@ -354,12 +354,12 @@ void pulisciSchermo() {
 
 #define OFFSET_CORNICE 15
 
-// Disegna una schermata nel buffer di pagina corrente. Scorporata da disegnaOrario()
-// perche' ora va eseguita due volte: una per ricostruire l'immagine precedente nella
-// RAM del controller, una per quella nuova.
-// Tutti gli elementi variabili passano per parametro, nessuno letto dalle globali:
-// la ricostruzione del buffer precedente deve poter ridisegnare lo stato di ALLORA,
-// non quello di adesso. icona: -1 nessuna, 0 batteria vuota, 1..3 tacche di ricarica.
+// Draws a screen into the current page buffer. Factored out of disegnaOrario()
+// because it now needs to run twice: once to reconstruct the previous image in
+// the controller's RAM, once for the new one.
+// All variable elements are passed as parameters, none read from globals: the
+// previous-buffer reconstruction must redraw the THEN state, not the current one.
+// icona: -1 none, 0 empty battery, 1..3 charging bars.
 void renderOrario(int ore, int minuti, float volt, int icona, bool avvisoWifi, bool invertito, const char* diag) {
   uint16_t colSfondo = invertito ? GxEPD_BLACK : GxEPD_WHITE;
   uint16_t colTesto  = invertito ? GxEPD_WHITE : GxEPD_BLACK;
@@ -402,11 +402,11 @@ void renderOrario(int ore, int minuti, float volt, int icona, bool avvisoWifi, b
   }
 }
 
-// invertito: alle ore tonde bianco e nero si scambiano. Non e' solo estetica —
-// invertendo, OGNI pixel della finestra cambia stato e viene quindi pilotato dal
-// refresh parziale. Un minuto dopo torna indietro. Sono due passate complete di
-// tutta la matrice ogni ora, che rinfrescano il contrasto senza il lampeggio di
-// un vero full refresh.
+// Inverted: at the top of every hour black and white swap. It's not just
+// cosmetic — by inverting, EVERY pixel in the window changes state and is
+// therefore driven by the partial refresh. One minute later it reverts. That's
+// two full-matrix passes per hour, which refresh contrast without the flicker
+// of a true full refresh.
 void disegnaOrario(bool fullRefresh, int ore, int minuti, bool invertito = false) {
   int icona = -1;
   if (inRicarica) {
@@ -416,13 +416,15 @@ void disegnaOrario(bool fullRefresh, int ore, int minuti, bool invertito = false
   }
   bool avvisoWifi = (fallimentiNTP >= 3);
 
-  // Il taglio di VCC azzera la RAM del UC8253, compreso il buffer "precedente" da cui
-  // parte il confronto differenziale. Senza ricostruirlo il refresh parziale produce
-  // garbage: e' l'autore stesso di GxEPD2 ad avvertirlo nel commento di init().
-  // nextPageToPrevious() scrive nella RAM vecchia senza fare alcun refresh.
-  // Fondamentale passare lo stato MEMORIZZATO e non quello attuale: se ricostruissi
-  // l'immagine precedente con l'icona di adesso, il controller la considererebbe gia'
-  // presente sul pannello e non la disegnerebbe: verrebbe grigia invece che nera.
+  // Cutting VCC zeroes the UC8253's RAM, including the "previous" buffer that
+  // the differential comparison starts from. Without reconstructing it, partial
+  // refresh produces garbage: GxEPD2's author himself warns about this in the
+  // init() comment.
+  // nextPageToPrevious() writes into the old RAM without performing any refresh.
+  // It is critical to pass the STORED state and not the current one: if the
+  // previous image were reconstructed with the current icon, the controller
+  // would consider it already on the panel and not draw it — it would come out
+  // grey instead of black.
   if (!fullRefresh && ramPannelloDaRicostruire && oraMostrata >= 0) {
     display.setPartialWindow(0, 0, display.width(), display.height());
     display.firstPage();
@@ -446,7 +448,7 @@ void disegnaOrario(bool fullRefresh, int ore, int minuti, bool invertito = false
   u8g2Fonts.setForegroundColor(GxEPD_BLACK);
   u8g2Fonts.setBackgroundColor(GxEPD_WHITE);
 
-  // Da qui in poi le due RAM del controller sono allineate a cio' che e' sul pannello.
+  // From here on, both controller RAMs are aligned with what is on the panel.
   ramPannelloDaRicostruire = false;
   oraMostrata = ore;
   minutoMostrato = minuti;
@@ -514,9 +516,8 @@ void disegnaMessaggioWifi() {
   int qrX = sepX + 1 + (416 - sepX - 1 - qrPx) / 2;
   int qrY = 6;
 
-  // Pulizia morbida al posto del full refresh nativo: questa schermata compare
-  // quando l'utente preme il pulsante, ed e' il momento peggiore per spaventarlo
-  // con cinquanta lampeggi.
+  // Soft clean instead of native full refresh: this screen appears when the
+  // user presses the button, the worst moment to scare them with fifty flashes.
   pulisciSchermo();
 
   display.setPartialWindow(0, 0, display.width(), display.height());
@@ -574,7 +575,7 @@ void disegnaMessaggioWifi() {
 }
 
 // -------------------------------------------------------
-// WIFI E NTP
+// WIFI AND NTP
 // -------------------------------------------------------
 
 int sincronizzaNTP() {
@@ -714,12 +715,12 @@ void avviaWiFiManager() {
   wm.setConfigPortalBlocking(false);
   wm.startConfigPortal("orologio");
 
-  // Potenza di trasmissione ridotta finche' siamo in access point. I beacon dell'AP
-  // vanno in 802.11b a 1 Mbps e a piena potenza: 350 mA di picco secondo la tabella 12
-  // del datasheet del modulo, che e' il caso peggiore in assoluto. Con quella corrente
-  // la caduta su D1 sale a ~0.3V e il rail scende sotto i 3.0V minimi del modulo,
-  // facendo scattare il brownout. Il telefono dell'utente e' a trenta centimetri:
-  // undici dBm sono abbondanti.
+  // Reduced transmit power while in access-point mode. AP beacons go out in
+  // 802.11b at 1 Mbps and at full power draw 350 mA peak according to the
+  // module datasheet table 12 — the absolute worst case. At that current the
+  // drop across D1 rises to ~0.3V and the rail falls below the module's 3.0V
+  // minimum, triggering brownout. The user's phone is thirty centimeters away:
+  // eleven dBm is plenty.
   WiFi.setTxPower(POTENZA_TX_PORTALE);
 
   unsigned long inizio = millis();
@@ -745,9 +746,9 @@ void avviaWiFiManager() {
   }
 
   if (configurato) {
-    // Ripristina la potenza piena: qui si parla col router di casa, che puo' essere
-    // in un'altra stanza. Il consumo torna alto ma in station mode e' meno critico,
-    // perche' non ci sono i beacon a 1 Mbps.
+    // Restore full power: we're now talking to the home router, which may be
+    // in another room. Current draw goes back up but in station mode it's less
+    // critical because there are no 1 Mbps beacons.
     WiFi.setTxPower(POTENZA_TX_NORMALE);
     sincronizzaNTP();
     spegniWiFi();
@@ -758,15 +759,16 @@ void avviaWiFiManager() {
 
   struct tm timeinfo;
   if (getLocalTime(&timeinfo)) {
-    // Anche il ritorno all'orologio passa dalla pulizia morbida: si viene da una
-    // schermata densa di testo e QR, ed e' la transizione che lascerebbe piu' ghosting.
+    // The return to the clock also goes through the soft clean: coming from a
+    // screen dense with text and QR code, this transition would leave the most
+    // ghosting.
     pulisciSchermo();
     disegnaOrario(false, timeinfo.tm_hour, timeinfo.tm_min);
   }
 }
 
 // -------------------------------------------------------
-// CICLO RICARICA — resta sveglio finché il cavo USB è collegato
+// CHARGING LOOP — stays awake while the USB cable is connected
 // -------------------------------------------------------
 
 void cicloRicarica() {
@@ -776,11 +778,12 @@ void cicloRicarica() {
   int minutoPrecedente = -1;
   unsigned long ultimaLettura = 0;
 
-  // INPUT e NON INPUT_PULLUP, anche se STDBY del TP5000 e' un open-drain.
-  // Sullo schematico R8 (1M) e' in serie tra STDBY e IO9, per disaccoppiare l'uscita
-  // del caricatore dal pin di strapping GPIO9 (sullo stesso nodo c'e' SW3, il tasto
-  // BOOT). Il pull-up interno vale ~45k: in serie col megaohm formerebbe un partitore
-  // che tiene il pin a ~3.16V, e il livello basso non sarebbe mai rilevabile.
+  // INPUT and NOT INPUT_PULLUP, even though the TP5000's STDBY is open-drain.
+  // On the schematic R8 (1M) sits in series between STDBY and IO9, to decouple
+  // the charger output from the GPIO9 strapping pin (SW3, the BOOT button, is
+  // on the same node). The internal pull-up is ~45k: in series with the megaohm
+  // it would form a divider holding the pin at ~3.16V, and the low level would
+  // never be detectable.
   pinMode(PIN_STDBY, INPUT);
   pinMode(PIN_USB, INPUT);
 
@@ -798,9 +801,9 @@ void cicloRicarica() {
 
       if (!caricaCompleta && digitalRead(PIN_STDBY) == LOW) {
         caricaCompleta = true;
-        // Chiude l'animazione sull'icona piena: senza questa chiamata l'ultimo
-        // fotogramma disegnato resterebbe a schermo fino al cambio di minuto,
-        // e poteva essere anche quello a zero tacche, cioe' batteria vuota.
+        // Close the animation on the full icon: without this call the last
+        // drawn frame would stay on screen until the minute changes, and it
+        // could have been the zero-bar frame, i.e. empty battery.
         animaBatteria();
       }
     }
@@ -837,27 +840,28 @@ void cicloRicarica() {
   do {
     display.fillScreen(GxEPD_WHITE);
   } while (display.nextPage());
-  // L'angolo e' stato ripulito: la fotografia di cio' che e' sul pannello va
-  // aggiornata, altrimenti la ricostruzione del buffer precedente ridisegnerebbe
-  // un'icona che non c'e' piu' e quella nuova non verrebbe pilotata.
+  // The corner has been cleared: the snapshot of what is on the panel must be
+  // updated, otherwise the previous-buffer reconstruction would redraw an icon
+  // that is no longer there and the new one would not be driven.
   iconaMostrata = -1;
 }
 
 // -------------------------------------------------------
-// PERCORSI DI RISVEGLIO
+// WAKE-UP PATHS
 // -------------------------------------------------------
 
-// Pressione lunga del pulsante: apre il portale WiFi.
-// Pressione breve con USB presente: entra nel ciclo di ricarica.
+// Long button press: opens the WiFi portal.
+// Short press with USB present: enters the charging loop.
 void gestisciRisveglioGPIO() {
   pinMode(BUTTON_PIN, INPUT_PULLDOWN);
   pinMode(PIN_USB, INPUT);
   delay(10);
 
-  // Con il cavo collegato il pulsante e' disabilitato e vince sempre il ciclo di
-  // ricarica. Aprire il portale WiFi mentre la scheda e' al PC non ha senso, e
-  // sommare i 350 mA di picco dell'access point alla corrente di carica fa cedere
-  // il rail: e' quello che sporcava lo schermo di grigio.
+  // With the cable connected the button is disabled and the charging loop
+  // always wins. Opening the WiFi portal while the board is plugged into a PC
+  // makes no sense, and adding the 350 mA peak of the access point on top of
+  // the charging current makes the rail sag — that's what was smearing the
+  // screen grey.
   if (digitalRead(PIN_USB)) {
     initDisplay(false);
     leggiBatteria();
@@ -866,11 +870,12 @@ void gestisciRisveglioGPIO() {
   }
 
   if (digitalRead(BUTTON_PIN) == HIGH) {
-    // Alimenta subito il pannello, PRIMA di contare i secondi di pressione.
-    // Con VCC_DISPLAY attivo il UC8253 e' in uno stato definito e non puo' piu'
-    // essere retro-alimentato a meta': lo sfondo resta bianco per tutta l'attesa.
-    // initial = false: con true GxEPD2 convertirebbe il primo refresh parziale in
-    // uno nativo, cioe' i cinquanta lampeggi proprio dopo la pressione.
+    // Power the panel immediately, BEFORE counting the seconds of the press.
+    // With VCC_DISPLAY active the UC8253 is in a defined state and can no
+    // longer be back-powered half-way: the background stays white for the
+    // entire wait.
+    // initial = false: with true GxEPD2 would convert the first partial
+    // refresh into a native one, i.e. the fifty flashes right after the press.
     initDisplay(false);
 
     unsigned long inizio = millis();
@@ -888,8 +893,8 @@ void gestisciRisveglioGPIO() {
     if (premutoLungo) {
       avviaWiFiManager();
     } else {
-      // Pressione breve: ridisegna l'orologio, cosi' l'utente vede una schermata
-      // pulita invece di quella che ha trovato al risveglio.
+      // Short press: redraw the clock so the user sees a clean screen
+      // instead of whatever was there at wake-up.
       struct tm timeinfo;
       if (getLocalTime(&timeinfo)) {
         disegnaOrario(false, timeinfo.tm_hour, timeinfo.tm_min);
@@ -898,8 +903,8 @@ void gestisciRisveglioGPIO() {
   }
 }
 
-// Accensione da spento: configura il quarzo 32.768 kHz, rileva devMode dal
-// pulsante, mostra subito 00:00 e poi l'ora vera appena NTP risponde.
+// Power-on from off: configures the 32.768 kHz crystal, detects devMode from
+// the button, shows 00:00 immediately and then the real time once NTP responds.
 void gestisciPowerCycle() {
   rtc_clk_32k_enable(true);
   rtc_clk_32k_bootstrap(512);
@@ -909,7 +914,7 @@ void gestisciPowerCycle() {
   devMode = (digitalRead(BUTTON_PIN) == HIGH);
 
   rtc_clk_slow_src_set(SOC_RTC_SLOW_CLK_SRC_XTAL32K);
-  delay(200);                              // lascia partire l'oscillatore
+  delay(200);                              // let the oscillator start
   allineaClockLento();
 
   initDisplay(true);
@@ -928,14 +933,14 @@ void gestisciPowerCycle() {
   }
 }
 
-// Ora di sistema arrotondata al minuto piu' vicino.
-// Serve perche' il firmware si sveglia ANTICIPO_RISVEGLIO secondi PRIMA dello scoccare
-// del minuto, in modo che il refresh del pannello — che dura circa 0.8 s tra boot,
-// accensione di Q3 e aggiornamento dell'inchiostro — finisca esattamente sul minuto.
-// Senza arrotondamento, al risveglio si leggerebbe ancora il minuto precedente e il
-// display mostrerebbe l'orario sbagliato.
-// L'arrotondamento tollera un errore di sveglia fino a 30 s in entrambi i versi, quindi
-// e' immune al jitter e si autocorregge anche se un ciclo dovesse allungarsi.
+// System time rounded to the nearest minute.
+// Needed because the firmware wakes up ANTICIPO_RISVEGLIO seconds BEFORE the
+// minute rolls over, so that the panel refresh — which takes about 0.8 s between
+// boot, Q3 turn-on and ink update — finishes exactly on the minute.
+// Without rounding, the previous minute would still be read at wake-up and the
+// display would show the wrong time.
+// The rounding tolerates a wake-up error of up to 30 s in either direction, so
+// it is immune to jitter and self-corrects even if a cycle runs long.
 bool oraArrotondata(struct tm& out) {
   time_t adesso;
   time(&adesso);
@@ -944,16 +949,16 @@ bool oraArrotondata(struct tm& out) {
   return (out.tm_year > (2016 - 1900));
 }
 
-// Aggiornamento al minuto. Ramo unico per modalita' normale e devMode: cambia
-// soltanto QUANDO scattano manutenzione e full refresh, non cosa viene fatto.
-// In devMode il tempo e' simulato da contatoreRisvegli, dove 60 risvegli valgono
-// un'ora e 1440 un giorno; in modalita' normale si guarda l'orologio vero.
+// Per-minute update. Single path for normal mode and devMode: only WHEN
+// maintenance and full refresh trigger changes, not what is done.
+// In devMode time is simulated by contatoreRisvegli, where 60 wake-ups equal
+// one hour and 1440 equal one day; in normal mode the real clock is used.
 void tickMinuto(struct tm& timeinfo) {
   initDisplay(false);
 
   bool fullRefresh  = false;
-  bool manutenzione = false;   // lettura batteria + invio telemetria
-  bool avanzaGiorno = false;   // rollover del giorno: incrementa giorniDaBoot e sincronizza NTP
+  bool manutenzione = false;   // battery reading + telemetry send
+  bool avanzaGiorno = false;   // day rollover: increments giorniDaBoot and syncs NTP
 
   if (devMode) {
     contatoreRisvegli++;
@@ -966,10 +971,10 @@ void tickMinuto(struct tm& timeinfo) {
   } else {
     manutenzione = (timeinfo.tm_hour == ORA_MANUTENZIONE && timeinfo.tm_min == 0);
     avanzaGiorno = manutenzione;
-    // Un solo full refresh nativo al giorno, nello stesso slot della manutenzione:
-    // un unico momento "rumoroso" alle 3 di notte invece di quattro fra le 2 e le 5.
-    // A tenere puliti i pixel durante il giorno ci pensa l'inversione allo scoccare
-    // di ogni ora, che pilota comunque l'intera matrice due volte.
+    // A single native full refresh per day, in the same maintenance slot:
+    // one "noisy" moment at 3 AM instead of four between 2 and 5.
+    // Keeping pixels clean during the day is handled by the inversion at the
+    // top of every hour, which drives the entire matrix twice anyway.
     fullRefresh  = manutenzione;
   }
 
@@ -977,15 +982,14 @@ void tickMinuto(struct tm& timeinfo) {
     leggiBatteria();
 
     if (avanzaGiorno) {
-      // Sincronizzazione NTP GIORNALIERA, e volutamente PRIMA del full refresh:
-      // con un quarzo nudo la deriva e' di qualche secondo al giorno (~46 ppm
-      // misurati), quindi una risincronizzazione settimanale accumulerebbe mezzo
-      // minuto di errore. Questo e' il momento di massimo consumo del dispositivo
-      // ed e' una scelta consapevole: WiFi acceso e full refresh nello stesso
-      // slot notturno, quando nessuno guarda.
+      // DAILY NTP sync, and deliberately BEFORE the full refresh: with a bare
+      // crystal the drift is a few seconds per day (~46 ppm measured), so a
+      // weekly resync would accumulate half a minute of error. This is the
+      // device's peak power moment and a conscious choice: WiFi on and full
+      // refresh in the same nightly slot, when no one is watching.
       giorniDaBoot++;
       int drift = sincronizzaNTP();
-      oraArrotondata(timeinfo);   // l'ora e' appena cambiata sotto i piedi
+      oraArrotondata(timeinfo);   // the time just changed under our feet
       inviaTelemtria(drift);
     } else {
       inviaTelemtria(0);
@@ -1000,8 +1004,8 @@ void tickMinuto(struct tm& timeinfo) {
   disegnaOrario(fullRefresh, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_min == 0);
 }
 
-// Risveglio da timer: se l'ora di sistema manca si tenta una sincronizzazione,
-// altrimenti si esegue il normale aggiornamento al minuto.
+// Timer wake-up: if system time is missing, attempt a sync;
+// otherwise run the normal per-minute update.
 void gestisciRisveglioTimer() {
   struct tm timeinfo;
 
@@ -1019,13 +1023,13 @@ void gestisciRisveglioTimer() {
 }
 
 // -------------------------------------------------------
-// SETUP — eseguito ad ogni risveglio
+// SETUP — runs at every wake-up
 // -------------------------------------------------------
 
-// Mira a svegliarsi ANTICIPO_RISVEGLIO secondi PRIMA dello scoccare del minuto, cosi'
-// che il refresh finisca sul minuto esatto e le cifre cambino in sincronia con un
-// telefono. Usa l'ora grezza, non quella arrotondata: qui servono i secondi veri.
-// In devMode il tempo e' accelerato e l'anticipo non ha senso.
+// Aims to wake up ANTICIPO_RISVEGLIO seconds BEFORE the minute rolls over, so
+// that the refresh finishes on the exact minute and the digits change in sync
+// with a phone. Uses raw time, not the rounded one: real seconds are needed here.
+// In devMode time is accelerated and the early wake-up makes no sense.
 int calcolaSecondiSleep() {
   if (devMode) return max(1, 60 / TEMPO_ACCELERATO);
 
@@ -1037,7 +1041,8 @@ int calcolaSecondiSleep() {
   return secondi;
 }
 
-// Unica uscita del firmware: qui convergono portale WiFi, ciclo ricarica e tick.
+// Single exit point of the firmware: WiFi portal, charging loop and tick all
+// converge here.
 void vaiInDeepSleep(int secondiSleep) {
   spegniDisplay();
 
@@ -1052,17 +1057,17 @@ void vaiInDeepSleep(int secondiSleep) {
 }
 
 void setup() {
-  // Stato di partenza esplicito: pad in alta impedenza, R13 tiene Q3 interdetto.
-  // Il display resta scollegato finche' un percorso non chiama initDisplay().
+  // Explicit initial state: pad at hi-Z, R13 keeps Q3 in cut-off.
+  // The display stays disconnected until a path calls initDisplay().
   pinMode(PIN_DISPLAY_EN, INPUT);
   displayAlimentato = false;
   displayInizializzato = false;
 
-  // Isolamento immediato delle linee verso il pannello. Finche' VCC_DISPLAY e' spento
-  // ogni pin pilotato retro-alimenta il UC8253 attraverso i diodi di protezione: il
-  // controller si sveglia a meta' e sporca lo schermo di grigio. Il ROM bootloader
-  // pilota GPIO21 come TX di UART0 prima ancora che parta il nostro codice, quindi
-  // queste righe devono essere le prime a girare.
+  // Immediate isolation of lines towards the panel. While VCC_DISPLAY is off,
+  // any driven pin back-powers the UC8253 through its protection diodes: the
+  // controller wakes up half-way and smears the screen grey. The ROM bootloader
+  // drives GPIO21 as UART0 TX before our code even starts, so these lines must
+  // be the first to run.
   pinMode(RES_PIN, INPUT);
   pinMode(DC_PIN, INPUT);
   pinMode(CS_PIN, INPUT);
