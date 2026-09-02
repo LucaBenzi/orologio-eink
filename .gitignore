@@ -1,0 +1,29 @@
+# KiCad
+*.kicad_prl
+*-backups/
+*.bak
+_autosave-*
+*.tmp
+fp-info-cache
+*.kicad_sch-bak
+*.kicad_pcb-bak
+
+# KiCad lock files
+*.lck
+
+# Build / export
+*.dsn
+*.ses
+
+# OS
+Thumbs.db
+.DS_Store
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# Claude Code
+.claude/

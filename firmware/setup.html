@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Eterno — Orologio Setup</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f5f5f0;
+    color: #2c2c2c;
+    line-height: 1.6;
+  }
+
+  header {
+    background: #1a1a1a;
+    color: #fff;
+    text-align: center;
+    padding: 2.5rem 1rem 1.5rem;
+  }
+
+  header h1 {
+    font-size: 1.6rem;
+    font-weight: 300;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 0.3rem;
+  }
+
+  header p {
+    font-size: 0.85rem;
+    color: #aaa;
+    letter-spacing: 0.05em;
+  }
+
+  nav {
+    background: #fff;
+    border-bottom: 1px solid #e0e0e0;
+    padding: 0.8rem 1rem;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  nav a {
+    text-decoration: none;
+    color: #555;
+    font-size: 0.85rem;
+    padding: 0.4rem 0.9rem;
+    border-radius: 2rem;
+    border: 1px solid #ddd;
+    transition: all 0.2s;
+  }
+
+  nav a:hover, nav a:focus {
+    background: #1a1a1a;
+    color: #fff;
+    border-color: #1a1a1a;
+  }
+
+  .lang-section {
+    max-width: 600px;
+    margin: 2rem auto;
+    padding: 0 1.2rem;
+    scroll-margin-top: 3.5rem;
+  }
+
+  .lang-section + .lang-section {
+    border-top: 1px solid #ddd;
+    padding-top: 2rem;
+  }
+
+  .lang-hero {
+    text-align: center;
+    padding: 1.5rem 0 1rem;
+  }
+
+  .lang-hero .flag {
+    font-size: 3.5rem;
+    line-height: 1;
+    display: block;
+    margin-bottom: 0.4rem;
+  }
+
+  .lang-hero .lang-name {
+    font-size: 1.1rem;
+    font-weight: 400;
+    color: #888;
+    letter-spacing: 0.05em;
+  }
+
+  .lang-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .lang-header h2 {
+    font-size: 1.2rem;
+    font-weight: 600;
+  }
+
+  .steps {
+    list-style: none;
+    counter-reset: step;
+  }
+
+  .steps li {
+    counter-increment: step;
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 1.2rem;
+    padding: 1rem 1.2rem;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+
+  .steps li::before {
+    content: counter(step);
+    flex-shrink: 0;
+    width: 2rem;
+    height: 2rem;
+    background: #1a1a1a;
+    color: #fff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    font-weight: 700;
+    margin-top: 0.1rem;
+  }
+
+  .steps li span {
+    font-size: 0.95rem;
+  }
+
+  .wifi-name {
+    font-family: 'Courier New', monospace;
+    background: #f0f0f0;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+
+  .done {
+    text-align: center;
+    margin: 1.5rem 0 0.5rem;
+    padding: 0.8rem;
+    background: #e8f5e9;
+    border-radius: 12px;
+    font-weight: 500;
+    color: #2e7d32;
+    font-size: 0.95rem;
+  }
+
+  footer {
+    text-align: center;
+    padding: 2.5rem 1rem;
+    color: #aaa;
+    font-size: 0.75rem;
+  }
+
+  @media (max-width: 400px) {
+    nav a { font-size: 0.78rem; padding: 0.35rem 0.7rem; }
+    .steps li { padding: 0.8rem 1rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Eterno</h1>
+  <p>Orologio &mdash; Setup Guide</p>
+</header>
+
+<nav>
+  <a href="#en">English</a>
+  <a href="#it">Italiano</a>
+  <a href="#fr">Fran&ccedil;ais</a>
+  <a href="#es">Espa&ntilde;ol</a>
+  <a href="#de">Deutsch</a>
+  <a href="#pt">Portugu&ecirc;s</a>
+</nav>
+
+<main>
+
+  <section class="lang-section" id="en">
+    <div class="lang-hero">
+      <span class="flag">&#127468;&#127463;</span>
+      <span class="lang-name">English</span>
+    </div>
+    <div class="lang-header">
+      <h2>Setup Instructions</h2>
+    </div>
+    <ol class="steps">
+      <li><span>Press and hold the button on the bottom of your Orologio for <strong>3 seconds</strong>.</span></li>
+      <li><span>On your phone, connect to the Wi-Fi network named <span class="wifi-name">orologio</span>.</span></li>
+      <li><span>A configuration page will open. Select your <strong>home Wi-Fi network</strong> from the list.</span></li>
+      <li><span>Enter your <strong>Wi-Fi password</strong> and tap Save.</span></li>
+    </ol>
+    <div class="done">Your Orologio will sync the time automatically. You're all set!</div>
+  </section>
+
+  <section class="lang-section" id="it">
+    <div class="lang-hero">
+      <span class="flag">&#127470;&#127481;</span>
+      <span class="lang-name">Italiano</span>
+    </div>
+    <div class="lang-header">
+      <h2>Istruzioni di configurazione</h2>
+    </div>
+    <ol class="steps">
+      <li><span>Tieni premuto il pulsante sul fondo del tuo Orologio per <strong>3 secondi</strong>.</span></li>
+      <li><span>Dal telefono, connettiti alla rete Wi-Fi chiamata <span class="wifi-name">orologio</span>.</span></li>
+      <li><span>Si aprir&agrave; una pagina di configurazione. Seleziona la <strong>rete Wi-Fi di casa tua</strong> dall'elenco.</span></li>
+      <li><span>Inserisci la <strong>password del Wi-Fi</strong> e tocca Salva.</span></li>
+    </ol>
+    <div class="done">Il tuo Orologio sincronizzer&agrave; l'ora automaticamente. Tutto pronto!</div>
+  </section>
+
+  <section class="lang-section" id="fr">
+    <div class="lang-hero">
+      <span class="flag">&#127467;&#127479;</span>
+      <span class="lang-name">Fran&ccedil;ais</span>
+    </div>
+    <div class="lang-header">
+      <h2>Instructions de configuration</h2>
+    </div>
+    <ol class="steps">
+      <li><span>Maintenez le bouton sous votre Orologio enfonc&eacute; pendant <strong>3 secondes</strong>.</span></li>
+      <li><span>Sur votre t&eacute;l&eacute;phone, connectez-vous au r&eacute;seau Wi-Fi nomm&eacute; <span class="wifi-name">orologio</span>.</span></li>
+      <li><span>Une page de configuration s'ouvrira. S&eacute;lectionnez votre <strong>r&eacute;seau Wi-Fi domestique</strong> dans la liste.</span></li>
+      <li><span>Entrez votre <strong>mot de passe Wi-Fi</strong> et appuyez sur Enregistrer.</span></li>
+    </ol>
+    <div class="done">Votre Orologio synchronisera l'heure automatiquement. C'est termin&eacute;&nbsp;!</div>
+  </section>
+
+  <section class="lang-section" id="es">
+    <div class="lang-hero">
+      <span class="flag">&#127466;&#127480;</span>
+      <span class="lang-name">Espa&ntilde;ol</span>
+    </div>
+    <div class="lang-header">
+      <h2>Instrucciones de configuraci&oacute;n</h2>
+    </div>
+    <ol class="steps">
+      <li><span>Mant&eacute;n pulsado el bot&oacute;n en la parte inferior de tu Orologio durante <strong>3 segundos</strong>.</span></li>
+      <li><span>En tu tel&eacute;fono, con&eacute;ctate a la red Wi-Fi llamada <span class="wifi-name">orologio</span>.</span></li>
+      <li><span>Se abrir&aacute; una p&aacute;gina de configuraci&oacute;n. Selecciona tu <strong>red Wi-Fi dom&eacute;stica</strong> de la lista.</span></li>
+      <li><span>Introduce tu <strong>contrase&ntilde;a Wi-Fi</strong> y pulsa Guardar.</span></li>
+    </ol>
+    <div class="done">&iexcl;Tu Orologio sincronizar&aacute; la hora autom&aacute;ticamente. Listo!</div>
+  </section>
+
+  <section class="lang-section" id="de">
+    <div class="lang-hero">
+      <span class="flag">&#127465;&#127466;</span>
+      <span class="lang-name">Deutsch</span>
+    </div>
+    <div class="lang-header">
+      <h2>Einrichtungsanleitung</h2>
+    </div>
+    <ol class="steps">
+      <li><span>Halte den Knopf an der Unterseite deines Orologio <strong>3 Sekunden</strong> lang gedr&uuml;ckt.</span></li>
+      <li><span>Verbinde dein Handy mit dem WLAN-Netzwerk <span class="wifi-name">orologio</span>.</span></li>
+      <li><span>Eine Konfigurationsseite &ouml;ffnet sich. W&auml;hle dein <strong>Heim-WLAN</strong> aus der Liste.</span></li>
+      <li><span>Gib dein <strong>WLAN-Passwort</strong> ein und tippe auf Speichern.</span></li>
+    </ol>
+    <div class="done">Dein Orologio synchronisiert die Zeit automatisch. Fertig!</div>
+  </section>
+
+  <section class="lang-section" id="pt">
+    <div class="lang-hero">
+      <span class="flag">&#127463;&#127479;</span>
+      <span class="lang-name">Portugu&ecirc;s</span>
+    </div>
+    <div class="lang-header">
+      <h2>Instru&ccedil;&otilde;es de configura&ccedil;&atilde;o</h2>
+    </div>
+    <ol class="steps">
+      <li><span>Pressione e segure o bot&atilde;o na parte inferior do seu Orologio por <strong>3 segundos</strong>.</span></li>
+      <li><span>No seu celular, conecte-se &agrave; rede Wi-Fi chamada <span class="wifi-name">orologio</span>.</span></li>
+      <li><span>Uma p&aacute;gina de configura&ccedil;&atilde;o ser&aacute; aberta. Selecione sua <strong>rede Wi-Fi dom&eacute;stica</strong> na lista.</span></li>
+      <li><span>Digite sua <strong>senha do Wi-Fi</strong> e toque em Salvar.</span></li>
+    </ol>
+    <div class="done">O seu Orologio sincronizar&aacute; a hora automaticamente. Tudo pronto!</div>
+  </section>
+
+</main>
+
+<footer>
+  Eterno &mdash; Designed in Italy
+</footer>
+
+</body>
+</html>
