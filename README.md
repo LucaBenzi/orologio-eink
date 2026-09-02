@@ -1,91 +1,91 @@
 # Orologio E-Ink
 
-Orologio da tavolo con display e-ink 3.7", ESP32-C3 e batteria LiFePO4. Si connette al WiFi, sincronizza l'ora via NTP e funziona per circa 2 anni con una singola ricarica USB-C di ~2 ore.
+E-ink desk clock with a 3.7" display, ESP32-C3 and LiFePO4 battery. Connects to WiFi, syncs time via NTP and runs for about 2 years on a single ~2-hour USB-C charge.
 
-**Filosofia:** "Lo appoggi e funziona. Lo ricarichi ogni 2 anni."
+**Philosophy:** "Place it and it works. Recharge it every 2 years."
 
-## Caratteristiche
+## Features
 
-- Display e-ink 3.7" (240x416 px) — visibile in piena luce, consumo zero a riposo
-- ESP32-C3 in deep sleep (~5 µA), wakeup ogni minuto per aggiornare il display
-- Quarzo esterno 32.768 kHz per timekeeping preciso in deep sleep (~1.7 s/giorno di drift)
-- Sync NTP automatica notturna per correggere il drift
-- 2x batterie LiFePO4 18650 in parallelo (3600 mAh) — ricarica USB-C con TP5000
-- Supporto per chimiche multiple: LiFePO4, Li-Po, 3x AA alcaline (configurabile via firmware e jumper)
-- Configurazione WiFi via portale captive (WiFiManager) — nessun cavo seriale necessario
-- Gestione automatica ora legale/solare con geolocalizzazione IP
-- Telemetria opzionale su Google Sheets (tensione batteria, stato USB, posizione)
-- PCB custom progettata in KiCad e prodotta su JLCPCB
+- 3.7" e-ink display (240x416 px) — sunlight readable, zero power draw at rest
+- ESP32-C3 in deep sleep (~5 µA), wakes up every minute to update the display
+- External 32.768 kHz crystal for accurate deep-sleep timekeeping (~1.7 s/day drift)
+- Automatic nightly NTP sync to correct drift
+- 2x LiFePO4 18650 cells in parallel (3600 mAh) — USB-C charging via TP5000
+- Multiple battery chemistry support: LiFePO4, Li-Po, 3x AA alkaline (configurable via firmware and jumpers)
+- WiFi setup via captive portal (WiFiManager) — no serial cable needed
+- Automatic DST handling with IP geolocation
+- Optional telemetry to Google Sheets (battery voltage, USB status, location)
+- Custom PCB designed in KiCad and manufactured on JLCPCB
 
 ## Hardware
 
-| Componente | Modello |
+| Component | Model |
 |---|---|
 | MCU | ESP32-C3-MINI-1 |
 | Display | WeAct Studio 3.7" e-Paper (GDEY037T03, driver UC8253) |
-| Batteria | 2x LiFePO4 18650 1800 mAh in parallelo |
-| Caricatore | TP5000 (CC/CV, cutoff 3.6 V) |
+| Battery | 2x LiFePO4 18650 1800 mAh in parallel |
+| Charger IC | TP5000 (CC/CV, cutoff 3.6 V) |
 | LDO | MCP1700-330 |
-| Connettore | USB Type-C |
-| Quarzo | 32.768 kHz SMD 3215 |
+| Connector | USB Type-C |
+| Crystal | 32.768 kHz SMD 3215 |
 
-Lo schema completo dei pin e il circuito sono nel file [docs/specifiche.md](docs/specifiche.md).
+Full pinout and circuit details are in [docs/specifiche.md](docs/specifiche.md).
 
-## Struttura del repository
+## Repository structure
 
 ```
 firmware/
-  orologio_secondi.ino   # firmware Arduino (ESP32-C3)
-  setup.html              # pagina di configurazione WiFi (portale captive)
-  telemetria_apps_script.js  # Google Apps Script per telemetria
+  orologio_secondi.ino      # Arduino firmware (ESP32-C3)
+  setup.html                 # WiFi configuration page (captive portal)
+  telemetria_apps_script.js  # Google Apps Script for telemetry
 pcb/
-  progetto.kicad_pro      # progetto KiCad 8
-  progetto.kicad_sch      # schematico
-  progetto.kicad_pcb      # layout PCB
-  libs/                   # librerie custom e componenti LCSC
-  loghi/                  # loghi SVG sulla board (CE, RoHS)
-  production/             # Gerber, BOM, pick&place per JLCPCB
+  progetto.kicad_pro         # KiCad 8 project
+  progetto.kicad_sch         # schematic
+  progetto.kicad_pcb         # PCB layout
+  libs/                      # custom libraries and LCSC components
+  loghi/                     # SVG logos on the board (CE, RoHS)
+  production/                # Gerber, BOM, pick & place for JLCPCB
 docs/
-  specifiche.md           # specifiche tecniche complete
+  specifiche.md              # full technical specifications
 ```
 
-## Setup firmware
+## Firmware setup
 
-### Dipendenze (Arduino IDE / PlatformIO)
+### Dependencies (Arduino IDE / PlatformIO)
 
 - Board: `esp32` by Espressif (ESP32-C3)
 - [GxEPD2](https://github.com/ZinggJM/GxEPD2)
 - [U8g2_for_Adafruit_GFX](https://github.com/olikraus/U8g2_for_Adafruit_GFX)
 - [WiFiManager](https://github.com/tzapu/WiFiManager)
 
-### Configurazione batteria
+### Battery configuration
 
-Nel file `orologio_secondi.ino`, decommentare la chimica corrispondente al pacco batteria montato:
+In `orologio_secondi.ino`, uncomment the line matching the installed battery pack:
 
 ```cpp
 #define BATTERIA_LIFEPO4    // LiFePO4 (default)
 //#define BATTERIA_LIPO     // Li-Po / Li-ion
-//#define BATTERIA_3AA      // 3x stilo alcaline
+//#define BATTERIA_3AA      // 3x AA alkaline
 ```
 
-La scelta va coordinata con i jumper sulla PCB (JP_DIODE, JP_LDO, JP_CS).
+This must match the jumper configuration on the PCB (JP_DIODE, JP_LDO, JP_CS).
 
-### Primo avvio
+### First boot
 
-1. Alimentare l'orologio
-2. Tenere premuto il pulsante per 3 secondi
-3. Connettere il telefono alla rete WiFi "orologio"
-4. Selezionare la propria rete WiFi e inserire la password
-5. L'orologio si sincronizza via NTP e mostra l'ora
+1. Power on the clock
+2. Hold the button for 3 seconds
+3. Connect your phone to the "orologio" WiFi network
+4. Select your home WiFi and enter the password
+5. The clock syncs via NTP and displays the time
 
 ## PCB
 
-Il progetto KiCad si trova in `pcb/`. La cartella `production/` contiene i file pronti per l'ordine su JLCPCB:
+The KiCad project is in `pcb/`. The `production/` folder contains files ready for ordering on JLCPCB:
 
-- `progetto.zip` — Gerber
-- `bom.csv` — Bill of Materials con part number LCSC
-- `positions.csv` — file pick & place
+- `progetto.zip` — Gerber files
+- `bom.csv` — Bill of Materials with LCSC part numbers
+- `positions.csv` — pick & place file
 
-## Licenza
+## License
 
-Questo progetto è open source. Vedi il file [LICENSE](LICENSE) per i dettagli.
+This project is open source. See the [LICENSE](LICENSE) file for details.
