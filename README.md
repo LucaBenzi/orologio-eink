@@ -4,6 +4,8 @@ E-ink desk clock with a 3.7" display, ESP32-C3 and LiFePO4 battery. Connects to 
 
 **Philosophy:** "Place it and it works. Recharge it every 2 years."
 
+![Display front view](img/photo_2026-09-03_13-24-54.jpg)
+
 ## Features
 
 - 3.7" e-ink display (240x416 px) — sunlight readable, zero power draw at rest
@@ -79,6 +81,9 @@ This must match the jumper configuration on the PCB (JP_DIODE, JP_LDO, JP_CS).
 5. The clock syncs via NTP and displays the time
 
 ## PCB
+
+![PCB top view](img/photo_2026-09-03_13-25-04.jpg)
+![PCB perspective view](img/photo_2026-09-03_13-25-06.jpg)
 
 The KiCad project is in `pcb/`. The `production/` folder contains files ready for ordering on JLCPCB:
 
